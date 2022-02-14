@@ -636,30 +636,6 @@ namespace Simplify
 		// recomputing during the simplification is not required,
 		// but mostly improves the result for closed meshes
 		//
-		if( iteration == 0 )
-		{
-			loopi(0,vertices.size())
-			vertices[i].q=SymetricMatrix(0.0);
-
-			loopi(0,triangles.size())
-			{
-				Triangle &t=triangles[i];
-				vec3f n,p[3];
-				loopj(0,3) p[j]=vertices[t.v[j]].p;
-				n.cross(p[1]-p[0],p[2]-p[0]);
-				n.normalize();
-				t.n=n;
-				loopj(0,3) vertices[t.v[j]].q =
-					vertices[t.v[j]].q+SymetricMatrix(n.x,n.y,n.z,-n.dot(p[0]));
-			}
-			loopi(0,triangles.size())
-			{
-				// Calc Edge Error
-				Triangle &t=triangles[i];vec3f p;
-				loopj(0,3) t.err[j]=calculate_error(t.v[j],t.v[(j+1)%3],p);
-				t.err[3]=min(t.err[0],min(t.err[1],t.err[2]));
-			}
-		}
 
 		// Init Reference ID list
 		loopi(0,vertices.size())
@@ -695,44 +671,69 @@ namespace Simplify
 			}
 		}
 
+		if( iteration != 0 ) return;
+		//Initial setup: find border vertices and estimate cost function
+
 		// Identify boundary : vertices[].border=0,1
-		if( iteration == 0 )
+
+		std::vector<int> vcount,vids;
+
+		loopi(0,vertices.size())
+			vertices[i].border=0;
+
+		loopi(0,vertices.size())
 		{
-			std::vector<int> vcount,vids;
-
-			loopi(0,vertices.size())
-				vertices[i].border=0;
-
-			loopi(0,vertices.size())
+			Vertex &v=vertices[i];
+			vcount.clear();
+			vids.clear();
+			loopj(0,v.tcount)
 			{
-				Vertex &v=vertices[i];
-				vcount.clear();
-				vids.clear();
-				loopj(0,v.tcount)
+				int k=refs[v.tstart+j].tid;
+				Triangle &t=triangles[k];
+				loopk(0,3)
 				{
-					int k=refs[v.tstart+j].tid;
-					Triangle &t=triangles[k];
-					loopk(0,3)
+					int ofs=0,id=t.v[k];
+					while(ofs<vcount.size())
 					{
-						int ofs=0,id=t.v[k];
-						while(ofs<vcount.size())
-						{
-							if(vids[ofs]==id)break;
-							ofs++;
-						}
-						if(ofs==vcount.size())
-						{
-							vcount.push_back(1);
-							vids.push_back(id);
-						}
-						else
-							vcount[ofs]++;
+						if(vids[ofs]==id)break;
+						ofs++;
 					}
+					if(ofs==vcount.size())
+					{
+						vcount.push_back(1);
+						vids.push_back(id);
+					}
+					else
+						vcount[ofs]++;
 				}
-				loopj(0,vcount.size()) if(vcount[j]==1)
-					vertices[vids[j]].border=1;
 			}
+			loopj(0,vcount.size()) if(vcount[j]==1)
+				vertices[vids[j]].border=1;
 		}
+
+		loopi(0,vertices.size())
+		vertices[i].q=SymetricMatrix(0.0);
+
+		loopi(0,triangles.size())
+		{
+			Triangle &t=triangles[i];
+			vec3f n,p[3];
+			loopj(0,3) p[j]=vertices[t.v[j]].p;
+			n.cross(p[1]-p[0],p[2]-p[0]);
+			n.normalize();
+			t.n=n;
+			loopj(0,3) vertices[t.v[j]].q =
+				vertices[t.v[j]].q+SymetricMatrix(n.x,n.y,n.z,-n.dot(p[0]));
+		}
+		loopi(0,triangles.size())
+		{
+			// Calc Edge Error
+			Triangle &t=triangles[i];vec3f p;
+			loopj(0,3) t.err[j]=calculate_error(t.v[j],t.v[(j+1)%3],p);
+			t.err[3]=min(t.err[0],min(t.err[1],t.err[2]));
+		}
+
+
 	}
 
 	// Finally compact mesh before exiting

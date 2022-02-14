@@ -115,14 +115,16 @@ int simplify(const char* file_path, const char* export_path, float reduceFractio
     return EXIT_SUCCESS;
 }
 
+#ifdef __EMSCRIPTEN__
+
 extern "C" {
 int simplify(const char* file_path, float reduceFraction, const char* export_path) {
-    printf("Simplify '%s' for export to '%s'\n", file_path, export_path);
+    printf("Going to simplify %s\n", file_path);
     return simplify(file_path, export_path, reduceFraction, 7.0);// aggressive
 }
 }
 
-#ifndef __EMSCRIPTEN__
+#else
 
 int main(int argc, const char * argv[]) {
     if (argc < 3) {
