@@ -63,7 +63,7 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
 
     // Perform simplification
     int startSize = Simplify::triangles.size();
-    Simplify::simplify_mesh(target_count, agressiveness, false); // false = no verbose output
+    Simplify::simplify_mesh(target_count, agressiveness);
 
     if (Simplify::triangles.size() >= startSize) {
         return EXIT_FAILURE;

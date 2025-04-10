@@ -52,12 +52,10 @@ inline VertexSTL get_vector(std::string& str)
     // "vertex float float float"
     float x, y, z;
 
-    // if(sscanf(str.c_str(),"%*[ \t]vertex%*[ \t]%f%*[ \t]%f%*[ \t]%f%*[ \t]",
-        // &x,	&y,	&z) == 3)
-        // printf("%f %f %f", x, y, z);
     if(sscanf(str.c_str(),"vertex %f %f %f",
         &x,	&y,	&z) != 3) {
-        printf("weird format ascii stl exiting\n");
+        // TODO Different exit code to signal this error?
+        // printf("weird format ascii stl exiting\n");
         exit(1);
     }
     VertexSTL v(x, y, z);
@@ -358,7 +356,7 @@ namespace Simplify
 	//                 more iterations yield higher quality
 	//
 
-	void simplify_mesh(int target_count, double agressiveness=7, bool verbose=false)
+	void simplify_mesh(int target_count, double agressiveness=7)
 	{
 		// init
 		loopi(0,triangles.size()) triangles[i].deleted=0;
@@ -389,11 +387,6 @@ namespace Simplify
 			// If it does not, try to adjust the 3 parameters
 			//
 			double threshold = 0.000000001*pow(double(iteration+3),agressiveness);
-
-			// target number of triangles reached ? Then break
-			if ((verbose) && (iteration%5==0)) {
-				printf("iteration %d - triangles %d threshold %g\n",iteration,triangle_count-deleted_triangles, threshold);
-			}
 
 			// remove vertices & mark deleted triangles
 			loopi(0,triangles.size())
@@ -452,7 +445,7 @@ namespace Simplify
 		compact_mesh();
 	} //simplify_mesh()
 
-	void simplify_mesh_lossless(bool verbose=false)
+	void simplify_mesh_lossless()
 	{
 		// init
 		loopi(0,triangles.size()) triangles[i].deleted=0;
@@ -476,9 +469,6 @@ namespace Simplify
 			// If it does not, try to adjust the 3 parameters
 			//
 			double threshold = DBL_EPSILON; //1.0E-3 EPS;
-			if (verbose) {
-				printf("lossless iteration %d\n", iteration);
-			}
 
 			// remove vertices & mark deleted triangles
 			loopi(0,triangles.size())

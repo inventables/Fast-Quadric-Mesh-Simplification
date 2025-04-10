@@ -1,6 +1,6 @@
 CXX := Main.cpp
 O3 := -O3
-WASM := -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORTED_FUNCTIONS='["_simplify", "_malloc", "_free"]'
+WASM := -s NO_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 -s EXPORTED_FUNCTIONS='["_simplify", "_malloc", "_free"]'
 OUT := -o Fast-Quadric-Mesh-Simplification.js
 
 all: wasm
