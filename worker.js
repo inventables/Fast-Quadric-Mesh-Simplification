@@ -1,53 +1,71 @@
 self.addEventListener('message', function(e) {
-    const file = e.data.blob;
-    const percentage = e.data.percentage;
-    const simplify_name = e.data.simplify_name;
-
-    prepare_and_simplify(file, percentage, simplify_name);
+  prepare_and_simplify(e.data.blob, e.data.percentage);
 }, false);
 
-var Module = {
-    'print': function(text) {
-        self.postMessage({"log":text});
-    }
-};
+var Module = {} // imported script installs functions on `Module`
+self.importScripts("Fast-Quadric-Mesh-Simplification.js");
 
-self.importScripts("a.out.js");
-
-let last_file_name = undefined;
-
-function prepare_and_simplify(file, percentage, simplify_name) {
-
-    var filename = file.name;
-
-    // if simplify on the same file, don't even read the file
-    if (filename === last_file_name) {
-        console.log("skipping load and create data file");
-        simplify(filename, percentage, simplify_name);
-        return;
-    } else { // remove last file in memory
-        if (last_file_name !== undefined)
-            Module.FS_unlink(last_file_name);
-    }
-
-    last_file_name = filename;
-    var fr = new FileReader();
-    fr.readAsArrayBuffer(file);
-    fr. onloadend = function (e) {
-        var data = new Uint8Array(fr.result);
-        Module.FS_createDataFile(".", filename, data, true, true);
-        simplify(filename, percentage, simplify_name);
-    }
+function prepare_and_simplify(file, percentage) {
+  var fr = new FileReader();
+  fr.readAsArrayBuffer(file);
+  fr.onloadend = function () {
+    const outputData = simplify(new Uint8Array(fr.result), percentage);
+    let file = new Blob([outputData], {type: 'application/sla'});
+    self.postMessage({"blob":file});
+  }
 }
 
-function simplify(filename, percentage, simplify_name) {
-    Module.ccall("simplify", // c function name
-        undefined, // return
-        ["string", "number", "string"], // param
-        [filename, percentage, simplify_name]
-    );
-    let out_bin = Module.FS_readFile(simplify_name);
-    // sla should work for binary stl
-    let file = new Blob([out_bin], {type: 'application/sla'});
-    self.postMessage({"blob":file});
+function simplify(inputArray, percentage) {
+  // Allocate memory for the input buffer and copy the data
+  const inputPtr = Module._malloc(inputArray.byteLength);
+  Module.HEAPU8.set(inputArray, inputPtr);
+
+  // Allocate memory for output pointer and output size
+  const outputPtrPtr = Module._malloc(4); // Pointer to pointer (32 bits)
+  const outputSizePtr = Module._malloc(4); // Size (32 bits)
+
+  // Initialize the output pointer and size to 0
+  Module.HEAPU32[outputPtrPtr/4] = 0;
+  Module.HEAPU32[outputSizePtr/4] = 0;
+
+  const inputFormat = 1; // STL?
+  const outputFormat = 1;
+  console.log('percentage', percentage);
+  const reduceFraction = percentage;
+  const aggressiveness = 7;
+
+  // Call the C function
+  const result = Module._simplify(
+    inputPtr,
+    inputArray.byteLength,
+    inputFormat,
+    outputPtrPtr,
+    outputSizePtr,
+    outputFormat,
+    reduceFraction,
+    aggressiveness
+  );
+
+  // Extract the results
+  const outputPtr = Module.HEAPU32[outputPtrPtr/4];
+  const outputSize = Module.HEAPU32[outputSizePtr/4];
+
+  let outputData = null;
+
+  if (result === 0 && outputPtr !== 0 && outputSize > 0) {
+    // Copy the output data to a JavaScript array
+    outputData = new Uint8Array(Module.HEAPU8.buffer, outputPtr, outputSize).slice();
+  }
+
+  // Clean up allocated memory
+  Module._free(inputPtr);
+  Module._free(outputPtrPtr);
+  Module._free(outputSizePtr);
+
+  // If the C function allocated memory for the output buffer, free it
+  if (outputPtr !== 0) {
+    Module._free(outputPtr);
+  }
+
+  return outputData;
 }
