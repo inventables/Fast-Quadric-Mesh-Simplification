@@ -10,12 +10,9 @@ Which is a minimal fork of `src.cmd/` from [sp4cerat/Fast-Quadric-Mesh-Simplific
 
 You need to have [emscripten](https://emscripten.org/) installed locally, e.g. `brew install emscripten`.
 
-Run `make` or `make debug`. If updating the `vendor/` files in Easel, you should do both.
+Run `make` or `make debug`. If updating the `vendor/` files in Easel, you should do the former and copy over the generated `*.js` and `*.wasm` files.
 
-1. Run `make` and copy over the generated `*.wasm` file
-2. Run `make debug` and copy over the generated `*.js` bindings file
-
-It's nice to have a non-minified JS bindings file in our vendor directory so it's human readable. It will get minified by `esbuild` anyway.
+It would be nice to have a non-minified JS bindings file in our vendor directory so it's human readable. Especially since it gets minified by `esbuild` anyway. However, it doesn't appear that's possible while also generating an optimized version of the WASM output.
 
 ## Testing
 
