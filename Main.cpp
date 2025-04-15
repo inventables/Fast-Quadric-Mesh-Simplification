@@ -90,11 +90,11 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
 
 extern "C" {
 
-int simplify(const uint8_t* input_buffer, size_t input_size, int input_format,
-                    uint8_t** output_buffer, size_t* output_size, int output_format,
+int simplify(const uint8_t* input_buffer, size_t input_size,
+                    uint8_t** output_buffer, size_t* output_size,
                     float reduceFraction, float agressiveness) {
-    return simplify_raw(input_buffer, input_size, (MeshFormat)input_format,
-                        output_buffer, output_size, (MeshFormat)output_format,
+    return simplify_raw(input_buffer, input_size, FORMAT_STL,
+                        output_buffer, output_size, FORMAT_STL,
                         reduceFraction, agressiveness);
 }
 

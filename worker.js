@@ -28,9 +28,6 @@ function simplify(inputArray, percentage) {
   Module.HEAPU32[outputPtrPtr/4] = 0;
   Module.HEAPU32[outputSizePtr/4] = 0;
 
-  const inputFormat = 1; // STL?
-  const outputFormat = 1;
-  console.log('percentage', percentage);
   const reduceFraction = percentage;
   const aggressiveness = 7;
 
@@ -38,10 +35,8 @@ function simplify(inputArray, percentage) {
   const result = Module._simplify(
     inputPtr,
     inputArray.byteLength,
-    inputFormat,
     outputPtrPtr,
     outputSizePtr,
-    outputFormat,
     reduceFraction,
     aggressiveness
   );
