@@ -8,11 +8,15 @@ Which is a minimal fork of `src.cmd/` from [sp4cerat/Fast-Quadric-Mesh-Simplific
 
 ## Building
 
-You need to have [emscripten](https://emscripten.org/) installed locally, e.g. `brew install emscripten`.
+You need to have [emscripten](https://emscripten.org/) installed locally to build, e.g. `brew install emscripten`. Then run `make` or `make debug`. This will build two files, `Fast-Quadric-Mesh-Simplification.wasm.js` and `Fast-Quadric-Mesh-Simplification.wasm`
 
-Run `make` or `make debug`. If updating the `vendor/` files in Easel, you should do the former and copy over the generated `*.js` and `*.wasm` files.
+Alternaively, you can build with an emscripten provided docker image using the following command
 
-It would be nice to have a non-minified JS bindings file in our vendor directory so it's human readable. Especially since it gets minified by `esbuild` anyway. However, it doesn't appear that's possible while also generating an optimized version of the WASM output.
+```sh
+docker run --rm -v $(pwd):/src emscripten/emsdk:4.0.6-arm64 make
+```
+
+If updating the `vendor/` files in Easel, you should run `make` and copy over the generated `*.js` and `*.wasm` files. It would be nice to have a non-minified JS bindings file in our vendor directory so it's human readable. Especially since it gets minified by `esbuild` anyway. However, it doesn't appear that's possible while also generating an optimized version of the WASM output.
 
 ## Testing
 
