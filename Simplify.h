@@ -17,6 +17,19 @@
 #define loopj(start_l,end_l) for ( int j=start_l;j<end_l;++j )
 #define loopk(start_l,end_l) for ( int k=start_l;k<end_l;++k )
 
+/* Error Codes for debugging WASM boundary */
+enum ErrorCode {
+  BadVert = 1,
+  InvalidInFormat = 2,
+  LoadError = 3,
+  InvalidMesh = 4,
+  InvalidFraction = 5,
+  InvalidTargetCount = 6,
+  LargerMesh = 7,
+  InvalidOutFormat = 8,
+  WriteError = 9
+};
+
 /*
  *  Represents an optionally-indexed vertex in space
  */
@@ -56,7 +69,7 @@ inline VertexSTL get_vector(std::string& str)
         &x,	&y,	&z) != 3) {
         // TODO Different exit code to signal this error?
         // printf("weird format ascii stl exiting\n");
-        exit(1);
+        exit(BadVert);
     }
     VertexSTL v(x, y, z);
 

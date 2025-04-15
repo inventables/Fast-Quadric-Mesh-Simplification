@@ -36,16 +36,16 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
     } else if (input_format == FORMAT_STL) {
         load_success = Simplify::load_stl(input_buffer, input_size);
     } else {
-        return EXIT_FAILURE;
+        return InvalidInFormat;
     }
 
     if (!load_success) {
-        return EXIT_FAILURE;
+        return LoadError;
     }
 
     // Basic validation
     if ((Simplify::triangles.size() < 3) || (Simplify::vertices.size() < 3)) {
-        return EXIT_FAILURE;
+        return InvalidMesh;
     }
 
     // Calculate target triangle count
@@ -53,12 +53,12 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
 
     if (reduceFraction > 1.0) reduceFraction = 1.0;
     if (reduceFraction <= 0.0) {
-        return EXIT_FAILURE;
+        return InvalidFraction;
     }
     target_count = round((float)Simplify::triangles.size() * reduceFraction);
 
     if (target_count < 4) {
-        return EXIT_FAILURE;
+        return InvalidTargetCount;
     }
 
     // Perform simplification
@@ -66,7 +66,7 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
     Simplify::simplify_mesh(target_count, agressiveness);
 
     if (Simplify::triangles.size() >= startSize) {
-        return EXIT_FAILURE;
+        return LargerMesh;
     }
 
     // Write output to buffer based on format
@@ -76,11 +76,11 @@ int simplify_raw(const uint8_t* input_buffer, size_t input_size, MeshFormat inpu
     } else if (output_format == FORMAT_STL) {
         write_success = Simplify::write_stl(output_buffer, output_size);
     } else {
-        return EXIT_FAILURE;
+        return InvalidOutFormat;
     }
 
     if (!write_success) {
-        return EXIT_FAILURE;
+        return WriteError;
     }
 
     return EXIT_SUCCESS;
