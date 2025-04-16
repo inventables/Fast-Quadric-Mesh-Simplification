@@ -6,35 +6,29 @@
 //
 // License : MIT
 // http://opensource.org/licenses/MIT
+// https://github.com/sp4cerat/Fast-Quadric-Mesh-Simplification
 //
-//https://github.com/sp4cerat/Fast-Quadric-Mesh-Simplification
-//
-// 5/2016: Chris Rorden created minimal version for OSX/Linux/Windows compile
 
-//#include <iostream>
-//#include <stddef.h>
-//#include <functional>
-//#include <sys/stat.h>
-//#include <stdbool.h>
-#include <string.h>
-#include <string>
-#include <fstream>
-#include <algorithm>
-#include <iostream>
-#include <cstring> // memcpy
-//#include <ctype.h>
-//#include <float.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <vector>
-#include <math.h>
+#include <sstream>
 #include <float.h> //FLT_EPSILON, DBL_EPSILON
-#include <stdint.h>
 
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
 #define loopj(start_l,end_l) for ( int j=start_l;j<end_l;++j )
 #define loopk(start_l,end_l) for ( int k=start_l;k<end_l;++k )
+
+/* Error Codes for debugging WASM boundary */
+enum ErrorCode {
+  BadVert = 1,
+  InvalidInFormat = 2,
+  LoadError = 3,
+  InvalidMesh = 4,
+  InvalidFraction = 5,
+  InvalidTargetCount = 6,
+  LargerMesh = 7,
+  InvalidOutFormat = 8,
+  WriteError = 9
+};
 
 /*
  *  Represents an optionally-indexed vertex in space
@@ -71,13 +65,11 @@ inline VertexSTL get_vector(std::string& str)
     // "vertex float float float"
     float x, y, z;
 
-    // if(sscanf(str.c_str(),"%*[ \t]vertex%*[ \t]%f%*[ \t]%f%*[ \t]%f%*[ \t]",
-        // &x,	&y,	&z) == 3)
-        // printf("%f %f %f", x, y, z);
     if(sscanf(str.c_str(),"vertex %f %f %f",
         &x,	&y,	&z) != 3) {
-        printf("weird format ascii stl exiting\n");
-        exit(1);
+        // TODO Different exit code to signal this error?
+        // printf("weird format ascii stl exiting\n");
+        exit(BadVert);
     }
     VertexSTL v(x, y, z);
 
@@ -377,7 +369,7 @@ namespace Simplify
 	//                 more iterations yield higher quality
 	//
 
-	void simplify_mesh(int target_count, double agressiveness=7, bool verbose=false)
+	void simplify_mesh(int target_count, double agressiveness=7)
 	{
 		// init
 		loopi(0,triangles.size()) triangles[i].deleted=0;
@@ -408,11 +400,6 @@ namespace Simplify
 			// If it does not, try to adjust the 3 parameters
 			//
 			double threshold = 0.000000001*pow(double(iteration+3),agressiveness);
-
-			// target number of triangles reached ? Then break
-			if ((verbose) && (iteration%5==0)) {
-				printf("iteration %d - triangles %d threshold %g\n",iteration,triangle_count-deleted_triangles, threshold);
-			}
 
 			// remove vertices & mark deleted triangles
 			loopi(0,triangles.size())
@@ -471,7 +458,7 @@ namespace Simplify
 		compact_mesh();
 	} //simplify_mesh()
 
-	void simplify_mesh_lossless(bool verbose=false)
+	void simplify_mesh_lossless()
 	{
 		// init
 		loopi(0,triangles.size()) triangles[i].deleted=0;
@@ -495,9 +482,6 @@ namespace Simplify
 			// If it does not, try to adjust the 3 parameters
 			//
 			double threshold = DBL_EPSILON; //1.0E-3 EPS;
-			if (verbose) {
-				printf("lossless iteration %d\n", iteration);
-			}
 
 			// remove vertices & mark deleted triangles
 			loopi(0,triangles.size())
@@ -814,208 +798,189 @@ namespace Simplify
 		return error;
 	}
 
-	//Option : Load OBJ
-	void load_obj(const char* filename){
+	// Load OBJ from memory buffer
+	bool load_obj(const uint8_t* buffer, size_t size) {
 		vertices.clear();
 		triangles.clear();
-		//printf ( "Loading Objects %s ... \n",filename);
-		FILE* fn;
-		if(filename==NULL)		return ;
-		if((char)filename[0]==0)	return ;
-		if ((fn = fopen(filename, "rb")) == NULL)
-		{
-			printf ( "File %s not found!\n" ,filename );
-			return;
+
+		// Ensure valid buffer
+		if (!buffer || size == 0) {
+			return false;
 		}
-		char line[1000];
-		memset ( line,0,1000 );
+
+		std::string data(reinterpret_cast<const char*>(buffer), size);
+		std::istringstream stream(data);
+		std::string line;
 		int vertex_cnt = 0;
-		while(fgets( line, 1000, fn ) != NULL)
-		{
-			Vertex v;
-			if ( line[0] == 'v' )
-			{
-				if ( line[1] == ' ' )
-				if(sscanf(line,"v %lf %lf %lf",
-					&v.p.x,	&v.p.y,	&v.p.z)==3)
-				{
+
+		while (std::getline(stream, line)) {
+			// Process vertex
+			if (line[0] == 'v' && line[1] == ' ') {
+				Vertex v;
+				std::istringstream lineStream(line.substr(2));
+				if (lineStream >> v.p.x >> v.p.y >> v.p.z) {
 					vertices.push_back(v);
 				}
 			}
-			int integers[9];
-			if ( line[0] == 'f' )
-			{
-				Triangle t;
-				bool tri_ok = false;
+			// Process face
+			else if (line[0] == 'f') {
+				std::istringstream lineStream(line.substr(2));
+				std::string v1, v2, v3;
+				if (lineStream >> v1 >> v2 >> v3) {
+					Triangle t;
+					// Extract vertex indices (handle different formats of face definitions)
+					size_t slashPos = v1.find('/');
+					if (slashPos != std::string::npos) {
+						v1 = v1.substr(0, slashPos);
+					}
+					slashPos = v2.find('/');
+					if (slashPos != std::string::npos) {
+						v2 = v2.substr(0, slashPos);
+					}
+					slashPos = v3.find('/');
+					if (slashPos != std::string::npos) {
+						v3 = v3.substr(0, slashPos);
+					}
 
-				if(sscanf(line,"f %d %d %d",
-					&integers[0],&integers[1],&integers[2])==3)
-				{
-					tri_ok = true;
-				}else
-				if(sscanf(line,"f %d// %d// %d//",
-					&integers[0],&integers[1],&integers[2])==3)
-				{
-					tri_ok = true;
-				}else
-				if(sscanf(line,"f %d//%d %d//%d %d//%d",
-					&integers[0],&integers[3],
-					&integers[1],&integers[4],
-					&integers[2],&integers[5])==6)
-				{
-					tri_ok = true;
-				}else
-				if(sscanf(line,"f %d/%d/%d %d/%d/%d %d/%d/%d",
-					&integers[0],&integers[6],&integers[3],
-					&integers[1],&integers[7],&integers[4],
-					&integers[2],&integers[8],&integers[5])==9)
-				{
-					tri_ok = true;
-				}
-				else
-				{
-					printf("unrecognized sequence exiting \n");
-					printf("%s\n",line);
-                    exit(1);
-				}
-				if ( tri_ok )
-				{
-					t.v[0] = integers[0]-1-vertex_cnt;
-					t.v[1] = integers[1]-1-vertex_cnt;
-					t.v[2] = integers[2]-1-vertex_cnt;
+					// Convert to integers and adjust indices
+					t.v[0] = std::stoi(v1) - 1 - vertex_cnt;
+					t.v[1] = std::stoi(v2) - 1 - vertex_cnt;
+					t.v[2] = std::stoi(v3) - 1 - vertex_cnt;
 
-					//tri.material = material;
-					//geo.triangles.push_back ( tri );
 					triangles.push_back(t);
-					//state_before = state;
-					//state ='f';
 				}
 			}
 		}
-		fclose(fn);
-		//printf("load_obj: vertices = %lu, triangles = %lu\n", vertices.size(), triangles.size() );
+
+		return (vertices.size() > 0 && triangles.size() > 0);
 	} // load_obj()
 
-	// Optional : Store as OBJ
+	// Serialize mesh as OBJ to memory buffer
+	bool write_obj(uint8_t** buffer, size_t* size) {
+		std::stringstream ss;
 
-	void write_obj(const char* filename)
-	{
-		FILE *file=fopen(filename, "w");
-		if (!file)
-		{
-			printf("write_obj: can't write data file \"%s\".\n", filename);
-			exit(0);
+		// Write vertices
+		for (size_t i = 0; i < vertices.size(); i++) {
+			ss << "v " << vertices[i].p.x << " " << vertices[i].p.y << " " << vertices[i].p.z << "\n";
 		}
-		loopi(0,vertices.size())
-		{
-			//fprintf(file, "v %lf %lf %lf\n", vertices[i].p.x,vertices[i].p.y,vertices[i].p.z);
-			fprintf(file, "v %g %g %g\n", vertices[i].p.x,vertices[i].p.y,vertices[i].p.z); //more compact: remove trailing zeros
+
+		// Write faces
+		for (size_t i = 0; i < triangles.size(); i++) {
+			if (!triangles[i].deleted) {
+				ss << "f " << (triangles[i].v[0]+1) << " " << (triangles[i].v[1]+1) << " " << (triangles[i].v[2]+1) << "\n";
+			}
 		}
-		loopi(0,triangles.size()) if(!triangles[i].deleted)
-		{
-			fprintf(file, "f %d %d %d\n", triangles[i].v[0]+1, triangles[i].v[1]+1, triangles[i].v[2]+1);
-			//fprintf(file, "f %d// %d// %d//\n", triangles[i].v[0]+1, triangles[i].v[1]+1, triangles[i].v[2]+1); //more compact: remove trailing zeros
+
+		// Get the string and copy to buffer
+		std::string str = ss.str();
+		*size = str.size();
+		*buffer = (uint8_t*)malloc(*size);
+		if (!*buffer) {
+			return false;
 		}
-		fclose(file);
+
+		memcpy(*buffer, str.c_str(), *size);
+		return true;
 	}
 
-    // std::vector<VertexSTL> load_binary(uint8_t* buf) {
-        // std::uint32_t num_faces;
-        // std::memcpy(&num_faces, &buf[80], 4);
-        // printf("num faces %d\n", num_faces);
-
-        // const unsigned int num_indices = num_faces*3;
-        // std::vector<VertexSTL> all_vertices(num_indices);
-
-        // for (int i=0;i<num_faces;i+=1) {
-            // for (int j=0;j<3;j++) {
-                // const int index = i*3+j;
-                // const int position = 84 + 12 + i*50 + j*12;
-                // std::memcpy(&all_vertices[index], &buf[position], 12);
-            // }
-        // }
-        // return all_vertices;
-    // }
-
-    std::vector<VertexSTL> load_binary(const char* filename) {
-        printf("loading binary stl\n");
-        std::fstream fbin;
-        fbin.open(filename, std::ios::in | std::ios::binary);
-        fbin.seekg(80);
-
-        int num_faces;
-        fbin.read(reinterpret_cast<char *>(&num_faces), 4);
-
-        const unsigned int num_indices = num_faces*3;
-
-        size_t len = num_faces*50;
-        char *ret = new char[len];
-        fbin.read(ret, len);
-        std::vector<VertexSTL> all_vertices(num_indices);
-
-        for (int i=0;i<num_faces;i+=1) {
-            for (int j=0;j<3;j++) {
-                const int index = i*3+j;
-                std::memcpy(&all_vertices[index], &ret[12 + i*50 + j*12], 12);
-            }
+    // Load binary STL from memory buffer
+    std::vector<VertexSTL> load_binary_stl(const uint8_t* buffer, size_t size) {
+        if (!buffer || size < 84) {
+            return std::vector<VertexSTL>();
         }
 
-        fbin.close();
+        // STL header is 80 bytes followed by 4-byte face count
+        int num_faces;
+        std::memcpy(&num_faces, buffer + 80, 4);
+
+        // Validate buffer size
+        size_t required_size = 84 + (num_faces * 50); // Header + count + faces data
+        if (size < required_size) {
+            return std::vector<VertexSTL>();
+        }
+
+        const unsigned int num_indices = num_faces * 3;
+        std::vector<VertexSTL> all_vertices(num_indices);
+
+        for (int i = 0; i < num_faces; i++) {
+            for (int j = 0; j < 3; j++) {
+                const int index = i * 3 + j;
+                const int position = 84 + 12 + i * 50 + j * 12; // Skip normal (12 bytes) for each face
+                std::memcpy(&all_vertices[index], buffer + position, 12);
+            }
+        }
 
         return all_vertices;
     }
 
-    std::vector<VertexSTL> load_ascii(const char* filename) {
-        printf("loading ascii\n");
-
+    // Load ASCII STL from memory buffer
+    std::vector<VertexSTL> load_ascii_stl(const uint8_t* buffer, size_t size) {
         std::vector<VertexSTL> all_vertices;
 
-        std::ifstream file;
-        file.open(filename);
+        if (!buffer || size == 0) {
+            return all_vertices;
+        }
 
+        std::string data(reinterpret_cast<const char*>(buffer), size);
+        std::istringstream stream(data);
         std::string line;
-        while (!file.eof()) {
-            std::getline(file, line);
+
+        while (std::getline(stream, line)) {
             line = trim(line);
             if (line.rfind("vertex", 0) == 0) {
                 all_vertices.push_back(get_vector(line));
             }
         }
-        file.close();
 
         return all_vertices;
     }
 
-    // thanks to https://github.com/mkeeter/fstl/blob/master/src/loader.cpp
-    std::vector<VertexSTL> load_stl_vertices(const char* filename) {
-        std::ifstream file(filename);
-        std::string line;
-        std::getline(file, line);
-        if (line.rfind("solid ", 0) == 0) {
-            std::getline(file, line);
-            line = trim(line);
-            if (line.rfind("facet", 0) == 0)
-            {
-                file.close();
-                return load_ascii(filename);
+    // Detect STL format (ASCII or binary) and load vertices
+    std::vector<VertexSTL> load_stl_vertices(const uint8_t* buffer, size_t size) {
+        if (!buffer || size < 6) {
+            return std::vector<VertexSTL>();
+        }
+
+        // Check if it starts with "solid " (ASCII STL)
+        std::string header(reinterpret_cast<const char*>(buffer), 6);
+        if (header == "solid ") {
+            // Further check for "facet" to confirm it's really ASCII
+            std::string data(reinterpret_cast<const char*>(buffer), std::min(size, size_t(256)));
+            size_t pos = data.find("facet");
+            if (pos != std::string::npos) {
+                return load_ascii_stl(buffer, size);
             }
         }
-        file.close();
-        return load_binary(filename);
+
+        // Default to binary
+        return load_binary_stl(buffer, size);
     }
 
 
-    void load_stl(const char* filename) {
+    // Load STL from memory buffer
+    bool load_stl(const uint8_t* buffer, size_t size) {
         vertices.clear();
         triangles.clear();
 
-        std::vector<VertexSTL> all_vertices = load_stl_vertices(filename);
-        const int32_t num_indices = all_vertices.size();
-        for (int c=0;c<all_vertices.size();c++)
-            all_vertices[c].i = c;
+        if (!buffer || size == 0) {
+            return false;
+        }
 
-        int32_t *indices;
-        indices = (int32_t *) malloc(num_indices * sizeof(int32_t));
+        std::vector<VertexSTL> all_vertices = load_stl_vertices(buffer, size);
+        const int32_t num_indices = all_vertices.size();
+
+        if (num_indices == 0) {
+            return false;
+        }
+
+        for (int c = 0; c < all_vertices.size(); c++) {
+            all_vertices[c].i = c;
+        }
+
+        int32_t *indices = (int32_t*)malloc(num_indices * sizeof(int32_t));
+        if (!indices) {
+            return false;
+        }
 
         std::sort(all_vertices.begin(), all_vertices.end());
 
@@ -1027,11 +992,9 @@ namespace Simplify
         float maxz = -999999;
 
         unsigned int num_vertices = 0;
-        for (int i=0;i<all_vertices.size();i++)
-        {
+        for (int i = 0; i < all_vertices.size(); i++) {
             VertexSTL v = all_vertices[i];
-            if (!num_vertices || v != all_vertices[num_vertices-1])
-            {
+            if (!num_vertices || v != all_vertices[num_vertices-1]) {
                 all_vertices[num_vertices++] = v;
                 if (v.x < minx) minx = v.x;
                 if (v.x > maxx) maxx = v.x;
@@ -1044,15 +1007,16 @@ namespace Simplify
         }
         all_vertices.resize(num_vertices);
 
-        for (int i=0;i<all_vertices.size();i++)
-        {
+        // Add vertices
+        for (int i = 0; i < all_vertices.size(); i++) {
             VertexSTL _v = all_vertices[i];
             Vertex v;
             v.p.x = _v.x; v.p.y = _v.y; v.p.z = _v.z;
             vertices.push_back(v);
         }
 
-        for (int i=0;i<num_indices;i+=3) {
+        // Add triangles
+        for (int i = 0; i < num_indices; i += 3) {
             Triangle t;
             t.v[0] = indices[i];
             t.v[1] = indices[i+1];
@@ -1060,59 +1024,75 @@ namespace Simplify
             triangles.push_back(t);
         }
 
-        printf("STL num of vertices %zu num of triangles %zu\n",
-                vertices.size(), triangles.size());
+        free(indices);
+        return true;
     }
 
-    inline void write_float(float f, FILE* file) {
-        fwrite(&f,sizeof(f),1,file);
+    // Helper functions to write binary STL
+    inline void write_float_to_buffer(float f, uint8_t* buffer, size_t& offset) {
+        memcpy(buffer + offset, &f, sizeof(f));
+        offset += sizeof(f);
     }
 
-    inline void write_vertex_stl(vec3f v, FILE* file) {
-        write_float(v.x, file);
-        write_float(v.y, file);
-        write_float(v.z, file);
+    inline void write_vertex_stl_to_buffer(vec3f v, uint8_t* buffer, size_t& offset) {
+        write_float_to_buffer(v.x, buffer, offset);
+        write_float_to_buffer(v.y, buffer, offset);
+        write_float_to_buffer(v.z, buffer, offset);
     }
 
-    void write_stl(const char* filename)
-    {
-        FILE *file=fopen(filename, "wb");
-        if (!file)
-        {
-            printf("write_obj: can't write data file \"%s\".\n", filename);
-            exit(0);
-        }
-        unsigned char buffer[80] = {'T', 'I', 'G', 'E', 'R'}; // write 80 empty
-        fwrite(buffer,sizeof(buffer),1,file);
-        unsigned char spacer[2] = {'\0', '\0'}; // null char
-
-        // loopi(0,vertices.size())
-        // {
-            // fprintf(file, "v %g %g %g\n", vertices[i].p.x,vertices[i].p.y,vertices[i].p.z); //more compact: remove trailing zeros
-        // }
+    // Serialize mesh as binary STL to memory buffer
+    bool write_stl(uint8_t** buffer, size_t* size) {
+        // Count non-deleted triangles
         unsigned int number_triangles = 0;
-        loopi(0,triangles.size()) if(!triangles[i].deleted)
-            number_triangles += 1;
-        fwrite(&number_triangles,sizeof(number_triangles),1,file);
-
-        loopi(0,triangles.size()) if(!triangles[i].deleted)
-        {
-            vec3f v0 = vertices[triangles[i].v[0]].p;
-            vec3f v1 = vertices[triangles[i].v[1]].p;
-            vec3f v2 = vertices[triangles[i].v[2]].p;
-
-            vec3f n;
-            n.cross(v1-v0,v2-v0);
-            n.normalize();
-
-            write_vertex_stl(n, file);
-            write_vertex_stl(v0, file);
-            write_vertex_stl(v1, file);
-            write_vertex_stl(v2, file);
-
-            fwrite(spacer,sizeof(spacer),1,file);
+        for (size_t i = 0; i < triangles.size(); i++) {
+            if (!triangles[i].deleted) {
+                number_triangles += 1;
+            }
         }
-        fclose(file);
+
+        // Calculate buffer size: 80 byte header + 4 byte count + 50 bytes per triangle
+        *size = 84 + (number_triangles * 50);
+        *buffer = (uint8_t*)malloc(*size);
+
+        if (!*buffer) {
+            return false;
+        }
+
+        // Initialize the buffer
+        memset(*buffer, 0, *size);
+
+        // Write header (80 bytes)
+        const char header[] = "SIMPLIFIED MESH";
+        memcpy(*buffer, header, std::min(sizeof(header), size_t(80)));
+
+        // Write triangle count (4 bytes)
+        memcpy(*buffer + 80, &number_triangles, 4);
+
+        // Write triangle data
+        size_t offset = 84;
+        for (size_t i = 0; i < triangles.size(); i++) {
+            if (!triangles[i].deleted) {
+                vec3f v0 = vertices[triangles[i].v[0]].p;
+                vec3f v1 = vertices[triangles[i].v[1]].p;
+                vec3f v2 = vertices[triangles[i].v[2]].p;
+
+                // Calculate normal
+                vec3f n;
+                n.cross(v1-v0, v2-v0);
+                n.normalize();
+
+                // Write normal and vertices (12 bytes each)
+                write_vertex_stl_to_buffer(n, *buffer, offset);
+                write_vertex_stl_to_buffer(v0, *buffer, offset);
+                write_vertex_stl_to_buffer(v1, *buffer, offset);
+                write_vertex_stl_to_buffer(v2, *buffer, offset);
+
+                // Write attribute byte count (2 bytes of zeros)
+                offset += 2;
+            }
+        }
+
+        return true;
     }
 
 };
