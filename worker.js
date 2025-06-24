@@ -2,20 +2,28 @@ self.addEventListener('message', function(e) {
   prepare_and_simplify(e.data.blob, e.data.percentage);
 }, false);
 
-var Module = {} // imported script installs functions on `Module`
+var Module = null;
 self.importScripts("Fast-Quadric-Mesh-Simplification.js");
 
-function prepare_and_simplify(file, percentage) {
+async function initializeModule() {
+  if (!Module) {
+    Module = await createSimplifyModule();
+  }
+  return Module;
+}
+
+async function prepare_and_simplify(file, percentage) {
+  await initializeModule();
   var fr = new FileReader();
   fr.readAsArrayBuffer(file);
-  fr.onloadend = function () {
-    const outputData = simplify(new Uint8Array(fr.result), percentage);
+  fr.onloadend = async function () {
+    const outputData = await simplify(new Uint8Array(fr.result), percentage);
     let file = new Blob([outputData], {type: 'application/sla'});
     self.postMessage({"blob":file});
   }
 }
 
-function simplify(inputArray, percentage) {
+async function simplify(inputArray, percentage) {
   // Allocate memory for the input buffer and copy the data
   const inputPtr = Module._malloc(inputArray.byteLength);
   Module.HEAPU8.set(inputArray, inputPtr);

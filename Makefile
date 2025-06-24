@@ -2,6 +2,7 @@ CXX := Main.cpp
 O3 := -O3
 WASM := -s NO_FILESYSTEM=1 -s ALLOW_MEMORY_GROWTH=1 -s WASM=1 \
         -s EXPORTED_FUNCTIONS='["_simplify", "_malloc", "_free"]' \
+        -s EXPORTED_RUNTIME_METHODS='["HEAPU8", "HEAPU32"]' \
         -s ENVIRONMENT='web,worker' \
         -s MODULARIZE=1 \
         -s EXPORT_ES6=0 \
