@@ -921,15 +921,21 @@ namespace Simplify
             return all_vertices;
         }
 
-        std::string data(reinterpret_cast<const char*>(buffer), size);
-        std::istringstream stream(data);
+        // Read lines straight from the buffer; copying the whole file into a
+        // string and then a stream costs two more file-sized allocations.
+        const char* data = reinterpret_cast<const char*>(buffer);
+        size_t start = 0;
         std::string line;
 
-        while (std::getline(stream, line)) {
+        while (start < size) {
+            const void* found = memchr(data + start, '\n', size - start);
+            size_t end = found ? static_cast<const char*>(found) - data : size;
+            line.assign(data + start, end - start);
             line = trim(line);
             if (line.rfind("vertex", 0) == 0) {
                 all_vertices.push_back(get_vector(line));
             }
+            start = end + 1;
         }
 
         return all_vertices;
@@ -959,8 +965,10 @@ namespace Simplify
 
     // Load STL from memory buffer
     bool load_stl(const uint8_t* buffer, size_t size) {
-        vertices.clear();
-        triangles.clear();
+        // Swap rather than clear so a previous mesh's capacity is released.
+        std::vector<Vertex>().swap(vertices);
+        std::vector<Triangle>().swap(triangles);
+        std::vector<Ref>().swap(refs);
 
         if (!buffer || size == 0) {
             return false;
@@ -1007,7 +1015,9 @@ namespace Simplify
         }
         all_vertices.resize(num_vertices);
 
-        // Add vertices
+        // Sizes are known up front; growing by push_back alone leaves the
+        // heap's high-water mark well above what the mesh needs.
+        vertices.reserve(all_vertices.size());
         for (int i = 0; i < all_vertices.size(); i++) {
             VertexSTL _v = all_vertices[i];
             Vertex v;
@@ -1015,7 +1025,7 @@ namespace Simplify
             vertices.push_back(v);
         }
 
-        // Add triangles
+        triangles.reserve(num_indices / 3);
         for (int i = 0; i < num_indices; i += 3) {
             Triangle t;
             t.v[0] = indices[i];
