@@ -975,6 +975,9 @@ namespace Simplify
         }
 
         std::vector<VertexSTL> all_vertices = load_stl_vertices(buffer, size);
+        // An ASCII file cut off partway through a facet would leave the last
+        // triangle reading indices past the end.
+        all_vertices.resize(all_vertices.size() - all_vertices.size() % 3);
         const int32_t num_indices = all_vertices.size();
 
         if (num_indices == 0) {
