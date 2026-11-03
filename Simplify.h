@@ -11,6 +11,7 @@
 
 #include <sstream>
 #include <float.h> //FLT_EPSILON, DBL_EPSILON
+#include <stdint.h>
 
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
@@ -1017,6 +1018,13 @@ namespace Simplify
             indices[v.i] = num_vertices - 1;
         }
         all_vertices.resize(num_vertices);
+
+        // A vector measures its length as a signed pointer difference, which
+        // overflows on wasm32 once the vector holds 2 GB.
+        if (num_vertices > PTRDIFF_MAX / sizeof(Vertex) || num_indices / 3 > PTRDIFF_MAX / sizeof(Triangle)) {
+            free(indices);
+            return false;
+        }
 
         // Sizes are known up front; growing by push_back alone leaves the
         // heap's high-water mark well above what the mesh needs.
