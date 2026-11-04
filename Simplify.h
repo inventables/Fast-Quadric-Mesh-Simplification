@@ -11,6 +11,7 @@
 
 #include <sstream>
 #include <float.h> //FLT_EPSILON, DBL_EPSILON
+#include <stdint.h>
 
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
 #define loopi(start_l,end_l) for ( int i=start_l;i<end_l;++i )
@@ -921,15 +922,21 @@ namespace Simplify
             return all_vertices;
         }
 
-        std::string data(reinterpret_cast<const char*>(buffer), size);
-        std::istringstream stream(data);
+        // Read lines straight from the buffer; copying the whole file into a
+        // string and then a stream costs two more file-sized allocations.
+        const char* data = reinterpret_cast<const char*>(buffer);
+        size_t start = 0;
         std::string line;
 
-        while (std::getline(stream, line)) {
+        while (start < size) {
+            const void* found = memchr(data + start, '\n', size - start);
+            size_t end = found ? static_cast<const char*>(found) - data : size;
+            line.assign(data + start, end - start);
             line = trim(line);
             if (line.rfind("vertex", 0) == 0) {
                 all_vertices.push_back(get_vector(line));
             }
+            start = end + 1;
         }
 
         return all_vertices;
@@ -959,14 +966,19 @@ namespace Simplify
 
     // Load STL from memory buffer
     bool load_stl(const uint8_t* buffer, size_t size) {
-        vertices.clear();
-        triangles.clear();
+        // Swap rather than clear so a previous mesh's capacity is released.
+        std::vector<Vertex>().swap(vertices);
+        std::vector<Triangle>().swap(triangles);
+        std::vector<Ref>().swap(refs);
 
         if (!buffer || size == 0) {
             return false;
         }
 
         std::vector<VertexSTL> all_vertices = load_stl_vertices(buffer, size);
+        // An ASCII file cut off partway through a facet would leave the last
+        // triangle reading indices past the end.
+        all_vertices.resize(all_vertices.size() - all_vertices.size() % 3);
         const int32_t num_indices = all_vertices.size();
 
         if (num_indices == 0) {
@@ -1007,7 +1019,16 @@ namespace Simplify
         }
         all_vertices.resize(num_vertices);
 
-        // Add vertices
+        // A vector measures its length as a signed pointer difference, which
+        // overflows on wasm32 once the vector holds 2 GB.
+        if (num_vertices > PTRDIFF_MAX / sizeof(Vertex) || num_indices / 3 > PTRDIFF_MAX / sizeof(Triangle)) {
+            free(indices);
+            return false;
+        }
+
+        // Sizes are known up front; growing by push_back alone leaves the
+        // heap's high-water mark well above what the mesh needs.
+        vertices.reserve(all_vertices.size());
         for (int i = 0; i < all_vertices.size(); i++) {
             VertexSTL _v = all_vertices[i];
             Vertex v;
@@ -1015,7 +1036,7 @@ namespace Simplify
             vertices.push_back(v);
         }
 
-        // Add triangles
+        triangles.reserve(num_indices / 3);
         for (int i = 0; i < num_indices; i += 3) {
             Triangle t;
             t.v[0] = indices[i];
